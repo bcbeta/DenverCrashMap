@@ -14,13 +14,7 @@ It supports:
 
 ## Run it
 
-Node 20+ is the only local dependency. Create the private local configuration file once:
-
-```bash
-cp .env.example .env
-```
-
-Open `.env`, replace `your_browser_api_key`, then start the app:
+Node 20+ is the only local dependency.
 
 ```bash
 npm start
@@ -50,11 +44,9 @@ CRASH_API_URL=https://your-host.example/api npm start
 
 The API adapter is isolated in `public/api.js`; the calculation layer is in `public/analytics.js`.
 
-## Google Maps
+## Map tiles
 
-The basemap uses the Google Maps JavaScript API. Enable that API in a Google Cloud project, use a billing-enabled project where required, and restrict the browser key to your local and deployed HTTP referrers. `DEMO_MAP_ID` is used for development unless `GOOGLE_MAPS_MAP_ID` is provided.
-
-The server automatically reads `.env`, which is excluded by `.gitignore`. This repository intentionally does not commit a key.
+The basemap uses OpenStreetMap through Leaflet. For a production deployment with meaningful traffic, configure a commercial or self-hosted tile provider and follow its usage policy.
 
 ## Clean-room note
 

@@ -6,8 +6,6 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("./public/", import.meta.url));
 const port = Number(process.env.PORT || 4173);
 const upstream = (process.env.CRASH_API_URL || "https://denver.zerovision.dev/map/api").replace(/\/$/, "");
-const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || "";
-const googleMapsMapId = process.env.GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID";
 
 const allowedApiPaths = new Set([
   "/streets",
@@ -87,15 +85,11 @@ const server = createServer(async (req, res) => {
     send(res, 405, "Method not allowed", undefined, { allow: "GET" });
     return;
   }
-  if (url.pathname === "/runtime-config.js") {
-    const config = JSON.stringify({ googleMapsApiKey, googleMapsMapId });
-    send(res, 200, `window.RUNTIME_CONFIG = ${config};\n`, "text/javascript; charset=utf-8", { "cache-control": "no-store" });
-  } else if (url.pathname.startsWith("/api/")) await proxyApi(req, res, url);
+  if (url.pathname.startsWith("/api/")) await proxyApi(req, res, url);
   else await serveStatic(res, url.pathname);
 });
 
 server.listen(port, () => {
   console.log(`Denver Crash Explorer running at http://localhost:${port}`);
   console.log(`Crash data: ${upstream}`);
-  console.log(`Google Maps key: ${googleMapsApiKey ? "configured" : "missing"}`);
 });

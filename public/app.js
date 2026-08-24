@@ -31,49 +31,17 @@ const state = {
   loading: false,
 };
 
-let map;
-let AdvancedMarkerElement;
-let infoWindow;
-const overlays = { incidents: [], selection: [] };
+const map = L.map("map", { zoomControl: false, preferCanvas: true }).setView([DENVER.lat, DENVER.lng], DENVER.zoom);
+L.control.zoom({ position: "topright" }).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}).addTo(map);
 
-function loadGoogleMaps(apiKey) {
-  if (window.google?.maps?.importLibrary) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const callbackName = "__denverCrashGoogleMapsReady";
-    const script = document.createElement("script");
-    window[callbackName] = () => {
-      delete window[callbackName];
-      resolve();
-    };
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&callback=${callbackName}`;
-    script.async = true;
-    script.onerror = () => reject(new Error("Google Maps could not be loaded."));
-    document.head.append(script);
-  });
-}
-
-async function initializeGoogleMap() {
-  const apiKey = window.RUNTIME_CONFIG?.googleMapsApiKey;
-  if (!apiKey) throw new Error("Set GOOGLE_MAPS_API_KEY before starting the app.");
-  await loadGoogleMaps(apiKey);
-  const [{ Map, InfoWindow }, markerLibrary] = await Promise.all([
-    google.maps.importLibrary("maps"),
-    google.maps.importLibrary("marker"),
-  ]);
-  AdvancedMarkerElement = markerLibrary.AdvancedMarkerElement;
-  infoWindow = new InfoWindow();
-  map = new Map(document.getElementById("map"), {
-    center: { lat: DENVER.lat, lng: DENVER.lng },
-    zoom: DENVER.zoom,
-    mapId: window.RUNTIME_CONFIG?.googleMapsMapId || "DEMO_MAP_ID",
-    mapTypeControl: false,
-    streetViewControl: false,
-    fullscreenControl: false,
-    clickableIcons: false,
-    gestureHandling: "greedy",
-    zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
-  });
-}
+const overlays = {
+  incidents: L.layerGroup().addTo(map),
+  selection: L.layerGroup().addTo(map),
+};
 
 function localDate(daysAgo = 0) {
   const date = new Date();
@@ -167,28 +135,21 @@ function validateDatesAndDistance() {
 }
 
 function clearSearchLayers() {
-  overlays.incidents.forEach(({ marker }) => { marker.map = null; });
-  overlays.selection.forEach((overlay) => {
-    if ("map" in overlay) overlay.map = null;
-    else if (typeof overlay.setMap === "function") overlay.setMap(null);
+  overlays.incidents.clearLayers();
+  overlays.selection.clearLayers();
+}
+
+function markerIcon(severity) {
+  return L.divIcon({
+    className: "",
+    html: `<span class="crash-marker ${severity}" aria-hidden="true"></span>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
   });
-  overlays.incidents = [];
-  overlays.selection = [];
-  infoWindow?.close();
 }
 
-function markerContent(severity) {
-  const element = document.createElement("span");
-  element.className = `crash-marker ${severity}`;
-  element.setAttribute("aria-hidden", "true");
-  return element;
-}
-
-function pinContent() {
-  const element = document.createElement("span");
-  element.className = "radius-pin";
-  element.setAttribute("aria-hidden", "true");
-  return element;
+function pinIcon() {
+  return L.divIcon({ className: "", html: '<span class="radius-pin" aria-hidden="true"></span>', iconSize: [27, 27], iconAnchor: [13, 27] });
 }
 
 function crashIdentity(properties) {
@@ -218,87 +179,43 @@ function popupHtml(properties) {
   return `<div class="popup-card"><strong>${escapeHtml(crashType(properties))}</strong><br><small>${escapeHtml(SEVERITY_LABELS[severity])}</small><p>${escapeHtml(properties.doti_address || "Address unavailable")}</p><small>${escapeHtml(crashDate(properties))}<br>${escapeHtml(crashIdentity(properties))}</small></div>`;
 }
 
-function extendBoundsFromGeoJSON(bounds, geojson) {
-  const visitCoordinates = (coordinates) => {
-    if (!Array.isArray(coordinates)) return;
-    if (typeof coordinates[0] === "number" && typeof coordinates[1] === "number") {
-      bounds.extend({ lat: coordinates[1], lng: coordinates[0] });
-      return;
-    }
-    coordinates.forEach(visitCoordinates);
-  };
-  const visit = (value) => {
-    if (!value) return;
-    if (value.type === "FeatureCollection") value.features?.forEach(visit);
-    else if (value.type === "Feature") visit(value.geometry);
-    else if (value.type === "GeometryCollection") value.geometries?.forEach(visit);
-    else visitCoordinates(value.coordinates);
-  };
-  visit(geojson);
-}
-
-function addDataLayer(geojson, style) {
-  const layer = new google.maps.Data({ map });
-  layer.addGeoJson(geojson);
-  layer.setStyle(style);
-  overlays.selection.push(layer);
-  return layer;
-}
-
 function renderMap(incidents, { centerline = null, buffer = null, pin = null } = {}) {
   clearSearchLayers();
-  const bounds = new google.maps.LatLngBounds();
+  const bounds = L.latLngBounds();
 
   if (buffer) {
-    addDataLayer(buffer, { strokeColor: "#24715b", strokeWeight: 2, fillColor: "#24715b", fillOpacity: 0.1, zIndex: 1 });
-    extendBoundsFromGeoJSON(bounds, buffer);
+    const bufferLayer = L.geoJSON(buffer, { style: { color: "#24715b", weight: 2, dashArray: "6 6", fillColor: "#24715b", fillOpacity: 0.1 } }).addTo(overlays.selection);
+    if (bufferLayer.getBounds().isValid()) bounds.extend(bufferLayer.getBounds());
   }
   if (centerline) {
-    addDataLayer(centerline, (feature) => {
-      const speed = Number(feature.getProperty("speedlimit") || 0);
-      return {
-        strokeColor: speed >= 45 ? "#e33f36" : speed >= 35 ? "#ed8b2d" : speed >= 26 ? "#d1b925" : "#26a269",
-        strokeWeight: 4,
-        strokeOpacity: 0.9,
-        zIndex: 2,
-      };
-    });
-    extendBoundsFromGeoJSON(bounds, centerline);
+    const centerlineLayer = L.geoJSON(centerline, {
+      style: (feature) => {
+        const speed = Number(feature?.properties?.speedlimit || 0);
+        return { color: speed >= 45 ? "#e33f36" : speed >= 35 ? "#ed8b2d" : speed >= 26 ? "#d1b925" : "#26a269", weight: 4, opacity: 0.9 };
+      },
+    }).addTo(overlays.selection);
+    if (centerlineLayer.getBounds().isValid()) bounds.extend(centerlineLayer.getBounds());
   }
   if (pin) {
     const polygon = circleGeoJSON(pin.lat, pin.lng, Number(elements.distance.value));
-    addDataLayer(polygon, { strokeColor: "#24715b", strokeWeight: 2, fillColor: "#24715b", fillOpacity: 0.1, zIndex: 1 });
-    const pinMarker = new AdvancedMarkerElement({ map, position: pin, content: pinContent(), title: "Radius search center", zIndex: 5 });
-    overlays.selection.push(pinMarker);
-    extendBoundsFromGeoJSON(bounds, polygon);
+    const radiusLayer = L.geoJSON(polygon, { style: { color: "#24715b", weight: 2, dashArray: "6 6", fillColor: "#24715b", fillOpacity: 0.1 } }).addTo(overlays.selection);
+    L.marker([pin.lat, pin.lng], { icon: pinIcon() }).addTo(overlays.selection);
+    bounds.extend(radiusLayer.getBounds());
   }
 
   (incidents?.features || []).forEach((feature) => {
     if (feature.geometry?.type !== "Point") return;
     const [lng, lat] = feature.geometry.coordinates;
-    const marker = new AdvancedMarkerElement({
-      map,
-      position: { lat, lng },
-      content: markerContent(maximumSeverity(feature.properties || {})),
-      title: crashType(feature.properties || {}),
-      zIndex: 4,
-    });
-    marker.addListener("click", () => {
-      infoWindow.setContent(popupHtml(feature.properties || {}));
-      infoWindow.open({ map, anchor: marker });
-    });
-    overlays.incidents.push({ marker, feature });
-    bounds.extend({ lat, lng });
+    const marker = L.marker([lat, lng], { icon: markerIcon(maximumSeverity(feature.properties || {})), riseOnHover: true })
+      .bindPopup(popupHtml(feature.properties || {}))
+      .addTo(overlays.incidents);
+    marker.feature = feature;
+    bounds.extend([lat, lng]);
   });
 
-  if (!bounds.isEmpty()) {
-    const padding = innerWidth <= 750
-      ? { top: 90, right: 35, bottom: 120, left: 35 }
-      : { top: 150, right: 80, bottom: 80, left: 490 };
-    map.fitBounds(bounds, padding);
-    google.maps.event.addListenerOnce(map, "idle", () => {
-      if (map.getZoom() > 17) map.setZoom(17);
-    });
+  if (bounds.isValid()) {
+    const mobilePadding = innerWidth <= 750 ? [35, 120] : [80, 80];
+    map.fitBounds(bounds, { padding: mobilePadding, maxZoom: 17, animate: true });
   }
 }
 
@@ -333,12 +250,9 @@ function renderCrashList(incidents) {
       const feature = features[Number(card.dataset.crashIndex)];
       if (feature.geometry?.type !== "Point") return;
       const [lng, lat] = feature.geometry.coordinates;
-      map.panTo({ lat, lng });
-      if (map.getZoom() < 16) map.setZoom(16);
-      const match = overlays.incidents.find((item) => item.feature === feature);
-      if (match) {
-        infoWindow.setContent(popupHtml(feature.properties || {}));
-        infoWindow.open({ map, anchor: match.marker });
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 16), { duration: 0.7 });
+      for (const marker of overlays.incidents.getLayers()) {
+        if (marker.feature === feature) marker.openPopup();
       }
       if (innerWidth <= 750) elements["report-panel"].classList.remove("open");
     });
@@ -487,10 +401,9 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  map.addListener("click", async ({ latLng }) => {
+  map.on("click", async ({ latlng }) => {
     if (state.tool !== "radius" || state.loading) return;
-    if (!latLng) return;
-    state.pin = { lat: latLng.lat(), lng: latLng.lng() };
+    state.pin = { lat: latlng.lat, lng: latlng.lng };
     updateApplyState();
     writeUrl();
     try { await searchRadius(); } catch (error) { setLoading(false); showToast(error.message, true); }
@@ -514,19 +427,10 @@ function bindEvents() {
 
 async function initialize() {
   setDefaultsFromUrl();
+  bindEvents();
   severityRows(summarize(null));
   renderCrashList(null);
   renderHistory([]);
-  try {
-    await initializeGoogleMap();
-  } catch (error) {
-    const mapStatus = document.getElementById("map-status");
-    mapStatus.innerHTML = `<strong>Google Maps needs configuration</strong><span>${escapeHtml(error.message)}</span><code>GOOGLE_MAPS_API_KEY=your_key npm start</code>`;
-    mapStatus.classList.remove("hidden");
-    showToast(error.message, true);
-    return;
-  }
-  bindEvents();
   try {
     state.streets = await crashApi.streets();
     elements["street-list"].innerHTML = state.streets.map((street) => `<option value="${escapeHtml(street.fullName)}"></option>`).join("");
