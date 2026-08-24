@@ -356,10 +356,20 @@ async function searchRadius() {
   }
 }
 
-function selectStreetFromInput() {
+async function selectStreetFromInput() {
   const query = elements.street.value.trim().toUpperCase();
   state.selectedStreet = state.streets.find((street) => street.fullName.toUpperCase() === query) || null;
-  const crossings = state.selectedStreet?.crossingStreets || [];
+  const selectedStreet = state.selectedStreet;
+  let crossings = selectedStreet?.crossingStreets || [];
+  if (selectedStreet && !selectedStreet.crossingStreets) {
+    try {
+      crossings = await crashApi.crossingStreets(selectedStreet.fullName);
+      selectedStreet.crossingStreets = crossings;
+    } catch (error) {
+      if (state.selectedStreet === selectedStreet) showToast(`Could not load cross streets: ${error.message}`, true);
+    }
+  }
+  if (state.selectedStreet !== selectedStreet) return;
   const currentParams = new URLSearchParams(location.search);
   for (const [id, parameter, placeholder] of [
     ["from-cross", "crossStreet1", "Any starting point"],
@@ -382,7 +392,7 @@ function closeMobilePanel(id) {
 function bindEvents() {
   elements["street-tool"].addEventListener("click", () => setTool("street"));
   elements["radius-tool"].addEventListener("click", () => setTool("radius"));
-  elements.street.addEventListener("input", selectStreetFromInput);
+  elements.street.addEventListener("input", () => { selectStreetFromInput(); });
   elements["from-cross"].addEventListener("change", writeUrl);
   elements["to-cross"].addEventListener("change", writeUrl);
   elements["from-date"].addEventListener("change", writeUrl);
@@ -434,7 +444,7 @@ async function initialize() {
   try {
     state.streets = await crashApi.streets();
     elements["street-list"].innerHTML = state.streets.map((street) => `<option value="${escapeHtml(street.fullName)}"></option>`).join("");
-    if (elements.street.value) selectStreetFromInput();
+    if (elements.street.value) await selectStreetFromInput();
     const canRestoreStreet = state.tool === "street" && state.selectedStreet;
     const canRestoreRadius = state.tool === "radius" && state.pin;
     if (canRestoreStreet || canRestoreRadius) {

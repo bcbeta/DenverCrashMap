@@ -9,7 +9,7 @@ It supports:
 - date and buffer/radius filters with shareable URL state;
 - crash points, street centerlines, buffered areas, and radius overlays;
 - KABCO summary counts, comprehensive crash costs, pedestrian/bicyclist totals;
-- crash detail cards and a ten-year severity-history chart;
+- crash detail cards and a severity-history chart;
 - responsive desktop and mobile layouts.
 
 ## Run it
@@ -36,13 +36,13 @@ npm test
 
 ## Data source
 
-The local server proxies a small allowlist of read-only endpoints from the reference application's public API. This avoids browser CORS issues and keeps the frontend independent of a hard-coded backend contract. To point the project at a compatible API:
+The browser reads the City and County of Denver's official ArcGIS crash and street-centerline layers directly. The crash layer contains the previous five calendar years plus the current year to date. No application server or API key is required.
 
-```bash
-CRASH_API_URL=https://your-host.example/api npm start
-```
+The data adapter and spatial-query logic are isolated in `public/api.js`; the calculation layer is in `public/analytics.js`.
 
-The API adapter is isolated in `public/api.js`; the calculation layer is in `public/analytics.js`.
+## Deployment
+
+Pushes to `main` deploy the contents of `public/` to GitHub Pages through `.github/workflows/pages.yml`.
 
 ## Map tiles
 
