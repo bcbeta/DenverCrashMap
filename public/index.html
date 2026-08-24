@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Explore Denver traffic crashes by street segment or radius." />
+    <title>Denver Crash Explorer</title>
+    <link rel="preconnect" href="https://maps.googleapis.com" />
+    <link rel="preconnect" href="https://maps.gstatic.com" />
+    <link rel="stylesheet" href="/styles.css?v=20260824" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <div id="map" aria-label="Interactive Denver crash map"></div>
+      <div class="map-status hidden" id="map-status" role="alert"></div>
+
+      <header class="brand-chip" aria-label="Denver Crash Explorer">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M4 24 11 12l4 7 4-11 9 16H4Z"/><path d="M8 27h16"/></svg>
+        </span>
+        <span><strong>Denver</strong><small>Crash Explorer</small></span>
+      </header>
+
+      <button class="mobile-toggle filters-toggle" id="open-filters" type="button">
+        <span aria-hidden="true">☷</span> Filters
+      </button>
+
+      <section class="panel filter-panel" id="filter-panel" aria-labelledby="filter-heading">
+        <div class="panel-mobile-header">
+          <div><span class="eyebrow">Explore the data</span><h2 id="filter-heading">Search crashes</h2></div>
+          <button class="icon-button" id="close-filters" type="button" aria-label="Close filters">×</button>
+        </div>
+
+        <div class="tool-switch" role="tablist" aria-label="Search method">
+          <button class="active" id="street-tool" type="button" role="tab" aria-selected="true">Street segment</button>
+          <button id="radius-tool" type="button" role="tab" aria-selected="false">Map radius</button>
+        </div>
+
+        <div class="radius-note hidden" id="radius-note">
+          <span aria-hidden="true">◎</span>
+          <span>Click the map to place the center of your search area.</span>
+        </div>
+
+        <form id="search-form">
+          <div class="field date-field">
+            <label>Date range</label>
+            <div class="date-pair">
+              <input id="from-date" type="date" required aria-label="From date" />
+              <span aria-hidden="true">to</span>
+              <input id="to-date" type="date" required aria-label="To date" />
+            </div>
+          </div>
+
+          <div class="field distance-field">
+            <label for="distance"><span id="distance-label">Buffer</span> <small>feet</small></label>
+            <input id="distance" type="number" min="5" max="500" step="5" value="20" required />
+          </div>
+
+          <div class="street-fields" id="street-fields">
+            <div class="field street-field">
+              <label for="street">Street</label>
+              <input id="street" type="search" list="street-list" placeholder="Search by street name" autocomplete="off" />
+              <datalist id="street-list"></datalist>
+            </div>
+            <div class="field cross-field">
+              <label for="from-cross">From cross street <small>optional</small></label>
+              <select id="from-cross" disabled><option value="">Any starting point</option></select>
+            </div>
+            <div class="field cross-field">
+              <label for="to-cross">To cross street <small>optional</small></label>
+              <select id="to-cross" disabled><option value="">Any ending point</option></select>
+            </div>
+          </div>
+
+          <button class="primary-button" id="apply-search" type="submit" disabled>
+            <span>Run search</span><span aria-hidden="true">→</span>
+          </button>
+        </form>
+      </section>
+
+      <button class="mobile-toggle report-toggle" id="open-report" type="button">
+        <span class="status-dot"></span> Location report
+      </button>
+
+      <aside class="panel report-panel" id="report-panel" aria-labelledby="report-heading">
+        <div class="report-heading-row">
+          <div><span class="eyebrow">Selected area</span><h2 id="report-heading">Location report</h2></div>
+          <button class="icon-button" id="close-report" type="button" aria-label="Close report">×</button>
+        </div>
+        <p class="selection-label" id="selection-label">Choose a street segment or click the map to begin.</p>
+
+        <div class="report-tabs" role="tablist" aria-label="Location report sections">
+          <button class="active" type="button" role="tab" aria-selected="true" data-report-tab="summary">Summary</button>
+          <button type="button" role="tab" aria-selected="false" data-report-tab="crashes">Crashes <span id="crash-tab-count">0</span></button>
+          <button type="button" role="tab" aria-selected="false" data-report-tab="history">History</button>
+        </div>
+
+        <div class="report-content">
+          <section class="report-section active" id="summary-section">
+            <div class="metric-grid">
+              <article class="metric-card"><span class="metric-icon metric-icon-blue">✦</span><div><strong id="crash-count">0</strong><span>Crashes</span></div></article>
+              <article class="metric-card"><span class="metric-icon metric-icon-amber">$</span><div><strong id="crash-cost">$0</strong><span>Estimated cost</span></div></article>
+            </div>
+            <div class="severity-list" id="severity-list"></div>
+            <p class="cost-note">Costs use comprehensive KABCO crash-cost estimates in 2024 dollars.</p>
+          </section>
+
+          <section class="report-section" id="crashes-section">
+            <div class="crash-list" id="crash-list"></div>
+          </section>
+
+          <section class="report-section" id="history-section">
+            <div class="history-header"><h3>Injury severity trends</h3><p>Crash outcomes by year</p></div>
+            <div class="chart-legend"><span><i class="legend-minor"></i>Minor / damage</span><span><i class="legend-serious"></i>Serious</span><span><i class="legend-fatal"></i>Fatal</span></div>
+            <div class="history-chart" id="history-chart"></div>
+          </section>
+        </div>
+      </aside>
+
+      <div class="map-legend" aria-label="Crash marker legend">
+        <span><i class="marker-fatal"></i>Fatal</span><span><i class="marker-serious"></i>Serious injury</span><span><i class="marker-other"></i>Other crash</span>
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="loading-overlay" id="loading" aria-hidden="true"><span></span><p>Loading crash data…</p></div>
+    </main>
+
+    <script src="/runtime-config.js"></script>
+    <script type="module" src="/app.js?v=20260824-google"></script>
+  </body>
+</html>
